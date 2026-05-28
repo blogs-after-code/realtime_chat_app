@@ -47,6 +47,7 @@
     const currentUserId = {{ current_user.id }};
     let selectedUserId = null;
     let lastMessageId = 0;
+    let messageCheckInterval = null;
     let isLoadingMessages = false;
     
     // Get CSRF token from cookies
@@ -65,7 +66,7 @@
         return cookieValue;
     }
     
-    // Update online status (keep user alive)
+    // Update online status
     function updateOnlineStatus() {
         fetch('/api/update_status/', {
             method: 'POST',
@@ -97,25 +98,20 @@
             .catch(error => console.log('Online users check error:', error));
     }
     
-    // Check for NEW messages only (not all messages)
+    // Check for NEW messages only
     function checkNewMessages() {
-        if (selectedUserId && !isLoadingMessages) {
+        if (selectedUserId && !isLoadingMessages && lastMessageId > 0) {
             fetch(`/api/get_new_messages/?user_id=${selectedUserId}&last_id=${lastMessageId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.messages && data.messages.length > 0) {
-                        // Sort messages by ID
-                        data.messages.sort((a, b) => a.id - b.id);
-                        
                         data.messages.forEach(msg => {
-                            // Only add if we haven't seen this message ID
+                            addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine, msg.id);
                             if (msg.id > lastMessageId) {
-                                addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
                                 lastMessageId = msg.id;
                             }
                         });
                         
-                        // Scroll to bottom only if new messages added
                         if (data.messages.length > 0) {
                             const messagesDiv = document.getElementById('messages');
                             messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -132,9 +128,9 @@
         const content = input.value.trim();
         
         if (content && selectedUserId) {
-            // Disable send button briefly to prevent double sending
             const sendBtn = document.getElementById('sendBtn');
             sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
             
             fetch('/api/send_message/', {
                 method: 'POST',
@@ -151,36 +147,42 @@
             .then(data => {
                 if (data.status === 'success') {
                     input.value = '';
-                    // Clear the last message ID and reload messages to get the new one
-                    lastMessageId = 0;
-                    loadMessages(selectedUserId);
+                    // Add the sent message immediately
+                    if (data.message) {
+                        addMessage(data.message.sender, data.message.content, data.message.timestamp, true, data.message.id);
+                        if (data.message.id > lastMessageId) {
+                            lastMessageId = data.message.id;
+                        }
+                    }
                 }
                 sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
             })
             .catch(error => {
                 console.log('Send message error:', error);
                 sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
             });
         }
     }
     
-    // Track message IDs to prevent duplicates
-    const displayedMessageIds = new Set();
-    
     // Add message to chat window
     function addMessage(sender, content, timestamp, isMine, messageId = null) {
-        // If messageId is provided and already displayed, skip
-        if (messageId && displayedMessageIds.has(messageId)) {
-            return;
-        }
-        
-        if (messageId) {
-            displayedMessageIds.add(messageId);
-        }
-        
         const messagesDiv = document.getElementById('messages');
+        
+        // Check if message with this ID already exists
+        if (messageId) {
+            const existingMessage = document.querySelector(`.message[data-id="${messageId}"]`);
+            if (existingMessage) {
+                return; // Message already exists, don't add duplicate
+            }
+        }
+        
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
+        if (messageId) {
+            messageDiv.setAttribute('data-id', messageId);
+        }
         
         const time = new Date(timestamp).toLocaleTimeString();
         
@@ -198,7 +200,7 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
     
-    // Load all messages for a user (only called when switching users)
+    // Load all messages for a user
     function loadMessages(userId) {
         isLoadingMessages = true;
         
@@ -208,26 +210,17 @@
                 const messagesDiv = document.getElementById('messages');
                 messagesDiv.innerHTML = '';
                 
-                // Clear the displayed message IDs set
-                displayedMessageIds.clear();
-                
-                // Reset last message ID
                 lastMessageId = 0;
                 
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(msg => {
-                        // Generate a temporary ID if not present
-                        const msgId = msg.id || Date.now() + Math.random();
-                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine, msgId);
-                        
-                        // Track the highest message ID
-                        if (msg.id && msg.id > lastMessageId) {
+                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine, msg.id);
+                        if (msg.id > lastMessageId) {
                             lastMessageId = msg.id;
                         }
                     });
                 }
                 
-                // Scroll to bottom
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
                 isLoadingMessages = false;
             })
@@ -237,7 +230,7 @@
             });
     }
     
-    // Escape HTML to prevent XSS
+    // Escape HTML
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -259,9 +252,8 @@
             messageInputArea.style.display = 'flex';
         }
         
-        // Reset and load messages for new user
+        // Reset last message ID and load messages
         lastMessageId = 0;
-        displayedMessageIds.clear();
         loadMessages(selectedUserId);
         
         // Remove selected class from all users and add to current
@@ -269,22 +261,7 @@
         userItem.classList.add('selected');
     }
     
-    // Clear duplicate messages function
-    function clearDuplicates() {
-        const messages = document.querySelectorAll('.message');
-        const seen = new Set();
-        
-        messages.forEach(msg => {
-            const text = msg.querySelector('.message-text')?.innerText;
-            if (text && seen.has(text)) {
-                msg.remove();
-            } else if (text) {
-                seen.add(text);
-            }
-        });
-    }
-    
-    // Event listeners when DOM is ready
+    // Event listeners
     document.addEventListener('DOMContentLoaded', function() {
         // User selection
         document.querySelectorAll('.user-item').forEach(item => {
@@ -309,77 +286,19 @@
             });
         }
         
-        // Start polling intervals
+        // Start polling
         updateOnlineStatus();
-        
-        // Update online status every 10 seconds
-        setInterval(updateOnlineStatus, 10000);
-        
-        // Check online users every 5 seconds
+        setInterval(updateOnlineStatus, 30000);
         setInterval(checkOnlineUsers, 5000);
         
-        // Check for new messages every 2 seconds (only if a user is selected)
+        // Check for new messages every 2 seconds
         setInterval(() => {
             if (selectedUserId) {
                 checkNewMessages();
             }
         }, 2000);
         
-        // Initial load of online users
         checkOnlineUsers();
-        
-        // Clear duplicates every 10 seconds (safety net)
-     // Add message to chat window with instant duplicate prevention
-function addMessage(sender, content, timestamp, isMine, messageId = null) {
-    // Generate a unique key for this message
-    const messageKey = `${sender}_${content}_${timestamp}`;
-    
-    // Check if this exact message already exists in the chat
-    const existingMessages = document.querySelectorAll('.message');
-    let isDuplicate = false;
-    
-    existingMessages.forEach(msg => {
-        const msgSender = msg.querySelector('.sender')?.innerText;
-        const msgText = msg.querySelector('.message-text')?.innerText;
-        if (msgSender === sender && msgText === content) {
-            isDuplicate = true;
-        }
-    });
-    
-    // If duplicate found, don't add it
-    if (isDuplicate) {
-        console.log('Duplicate message blocked:', content);
-        return;
-    }
-    
-    // If messageId is provided and already displayed, skip
-    if (messageId && displayedMessageIds.has(messageId)) {
-        return;
-    }
-    
-    if (messageId) {
-        displayedMessageIds.add(messageId);
-    }
-    
-    const messagesDiv = document.getElementById('messages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
-    
-    const time = new Date(timestamp).toLocaleTimeString();
-    
-    messageDiv.innerHTML = `
-        <div class="message-content">
-            <div class="message-text">${escapeHtml(content)}</div>
-            <div class="message-info">
-                <span class="sender">${escapeHtml(sender)}</span>
-                <span class="time">${time}</span>
-            </div>
-        </div>
-    `;
-    
-    messagesDiv.appendChild(messageDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
     });
 </script>
 </body>
