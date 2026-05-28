@@ -33,7 +33,7 @@ This app is configured for deployment on Render.com with PostgreSQL and Redis su
 
 ## Live Demo
 
-[ its URL will be here after deployment]
+https://realtime-chat-app-biyl.onrender.com/
 
 ## License
 
