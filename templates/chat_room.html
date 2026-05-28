@@ -47,8 +47,7 @@
     const currentUserId = {{ current_user.id }};
     let selectedUserId = null;
     let lastMessageId = 0;
-    let pollingInterval = null;
-    let messageCheckInterval = null;
+    let isLoadingMessages = false;
     
     // Get CSRF token from cookies
     function getCookie(name) {
@@ -98,26 +97,29 @@
             .catch(error => console.log('Online users check error:', error));
     }
     
-    // Check for new messages
+    // Check for NEW messages only (not all messages)
     function checkNewMessages() {
-        if (selectedUserId) {
+        if (selectedUserId && !isLoadingMessages) {
             fetch(`/api/get_new_messages/?user_id=${selectedUserId}&last_id=${lastMessageId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.messages && data.messages.length > 0) {
-                        // Sort messages by ID to ensure correct order
+                        // Sort messages by ID
                         data.messages.sort((a, b) => a.id - b.id);
                         
                         data.messages.forEach(msg => {
-                            addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
+                            // Only add if we haven't seen this message ID
                             if (msg.id > lastMessageId) {
+                                addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
                                 lastMessageId = msg.id;
                             }
                         });
                         
-                        // Scroll to bottom
-                        const messagesDiv = document.getElementById('messages');
-                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        // Scroll to bottom only if new messages added
+                        if (data.messages.length > 0) {
+                            const messagesDiv = document.getElementById('messages');
+                            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        }
                     }
                 })
                 .catch(error => console.log('Message check error:', error));
@@ -130,6 +132,10 @@
         const content = input.value.trim();
         
         if (content && selectedUserId) {
+            // Disable send button briefly to prevent double sending
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            
             fetch('/api/send_message/', {
                 method: 'POST',
                 headers: {
@@ -145,18 +151,33 @@
             .then(data => {
                 if (data.status === 'success') {
                     input.value = '';
-                    // Force immediate message check
-                    setTimeout(() => {
-                        loadMessages(selectedUserId);
-                    }, 100);
+                    // Clear the last message ID and reload messages to get the new one
+                    lastMessageId = 0;
+                    loadMessages(selectedUserId);
                 }
+                sendBtn.disabled = false;
             })
-            .catch(error => console.log('Send message error:', error));
+            .catch(error => {
+                console.log('Send message error:', error);
+                sendBtn.disabled = false;
+            });
         }
     }
     
+    // Track message IDs to prevent duplicates
+    const displayedMessageIds = new Set();
+    
     // Add message to chat window
-    function addMessage(sender, content, timestamp, isMine) {
+    function addMessage(sender, content, timestamp, isMine, messageId = null) {
+        // If messageId is provided and already displayed, skip
+        if (messageId && displayedMessageIds.has(messageId)) {
+            return;
+        }
+        
+        if (messageId) {
+            displayedMessageIds.add(messageId);
+        }
+        
         const messagesDiv = document.getElementById('messages');
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
@@ -177,20 +198,28 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
     
-    // Load all messages for a user
+    // Load all messages for a user (only called when switching users)
     function loadMessages(userId) {
+        isLoadingMessages = true;
+        
         fetch(`/get_messages/${userId}/`)
             .then(response => response.json())
             .then(data => {
                 const messagesDiv = document.getElementById('messages');
                 messagesDiv.innerHTML = '';
                 
+                // Clear the displayed message IDs set
+                displayedMessageIds.clear();
+                
                 // Reset last message ID
                 lastMessageId = 0;
                 
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(msg => {
-                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
+                        // Generate a temporary ID if not present
+                        const msgId = msg.id || Date.now() + Math.random();
+                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine, msgId);
+                        
                         // Track the highest message ID
                         if (msg.id && msg.id > lastMessageId) {
                             lastMessageId = msg.id;
@@ -200,8 +229,12 @@
                 
                 // Scroll to bottom
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                isLoadingMessages = false;
             })
-            .catch(error => console.log('Load messages error:', error));
+            .catch(error => {
+                console.log('Load messages error:', error);
+                isLoadingMessages = false;
+            });
     }
     
     // Escape HTML to prevent XSS
@@ -226,13 +259,29 @@
             messageInputArea.style.display = 'flex';
         }
         
-        // Reset last message ID and load messages
+        // Reset and load messages for new user
         lastMessageId = 0;
+        displayedMessageIds.clear();
         loadMessages(selectedUserId);
         
         // Remove selected class from all users and add to current
         document.querySelectorAll('.user-item').forEach(u => u.classList.remove('selected'));
         userItem.classList.add('selected');
+    }
+    
+    // Clear duplicate messages function
+    function clearDuplicates() {
+        const messages = document.querySelectorAll('.message');
+        const seen = new Set();
+        
+        messages.forEach(msg => {
+            const text = msg.querySelector('.message-text')?.innerText;
+            if (text && seen.has(text)) {
+                msg.remove();
+            } else if (text) {
+                seen.add(text);
+            }
+        });
     }
     
     // Event listeners when DOM is ready
@@ -263,8 +312,8 @@
         // Start polling intervals
         updateOnlineStatus();
         
-        // Update online status every 30 seconds
-        setInterval(updateOnlineStatus, 30000);
+        // Update online status every 10 seconds
+        setInterval(updateOnlineStatus, 10000);
         
         // Check online users every 5 seconds
         setInterval(checkOnlineUsers, 5000);
@@ -278,6 +327,59 @@
         
         // Initial load of online users
         checkOnlineUsers();
+        
+        // Clear duplicates every 10 seconds (safety net)
+     // Add message to chat window with instant duplicate prevention
+function addMessage(sender, content, timestamp, isMine, messageId = null) {
+    // Generate a unique key for this message
+    const messageKey = `${sender}_${content}_${timestamp}`;
+    
+    // Check if this exact message already exists in the chat
+    const existingMessages = document.querySelectorAll('.message');
+    let isDuplicate = false;
+    
+    existingMessages.forEach(msg => {
+        const msgSender = msg.querySelector('.sender')?.innerText;
+        const msgText = msg.querySelector('.message-text')?.innerText;
+        if (msgSender === sender && msgText === content) {
+            isDuplicate = true;
+        }
+    });
+    
+    // If duplicate found, don't add it
+    if (isDuplicate) {
+        console.log('Duplicate message blocked:', content);
+        return;
+    }
+    
+    // If messageId is provided and already displayed, skip
+    if (messageId && displayedMessageIds.has(messageId)) {
+        return;
+    }
+    
+    if (messageId) {
+        displayedMessageIds.add(messageId);
+    }
+    
+    const messagesDiv = document.getElementById('messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
+    
+    const time = new Date(timestamp).toLocaleTimeString();
+    
+    messageDiv.innerHTML = `
+        <div class="message-content">
+            <div class="message-text">${escapeHtml(content)}</div>
+            <div class="message-info">
+                <span class="sender">${escapeHtml(sender)}</span>
+                <span class="time">${time}</span>
+            </div>
+        </div>
+    `;
+    
+    messagesDiv.appendChild(messageDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
     });
 </script>
 </body>
