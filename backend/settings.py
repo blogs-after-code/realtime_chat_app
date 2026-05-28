@@ -106,3 +106,25 @@ CSRF_TRUSTED_ORIGINS = [
 # Cookie settings
 CSRF_COOKIE_SECURE = False
 SESSION_COOKIE_SECURE = False
+
+
+# Add these lines at the end of your settings.py file
+
+# WebSocket settings for Render
+ASGI_APPLICATION = 'backend.asgi.application'
+
+# Channel layers - Use Redis for production (but for now, use in-memory)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
+# Security settings for WebSockets
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = False
+
+# CSRF settings (already there, but ensure these)
+CSRF_TRUSTED_ORIGINS = ['https://*.onrender.com', 'http://*.onrender.com']
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_HTTPONLY = False
