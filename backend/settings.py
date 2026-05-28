@@ -1,5 +1,4 @@
 import os
-import dj_database_url
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -8,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Production settings
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-chat-app-dev-key-change-in-production')
-ALLOWED_HOSTS = ['*']  # Update this with your Render URL
+ALLOWED_HOSTS = ['*', '.onrender.com', 'localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [
@@ -19,13 +18,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'channels',
-    'whitenoise',  # Add whitenoise for static files
+    'whitenoise',
     'chat',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # Add whitenoise middleware
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -55,28 +54,20 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 ASGI_APPLICATION = 'backend.asgi.application'
 
-# Database configuration for PostgreSQL (with SQLite fallback for development)
+# Database configuration - Using SQLite (simple!)
 DATABASES = {
-    'default': dj_database_url.config(default='sqlite:///db.sqlite3')
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
 
-# Redis channel layer for production (with fallback for development)
+# Channel layers - Using in-memory for development
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            'hosts': [os.environ.get('REDIS_URL', 'redis://localhost:6379')],
-        },
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
     },
 }
-
-# Fallback to in-memory layer if Redis is not configured
-if not os.environ.get('REDIS_URL'):
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels.layers.InMemoryChannelLayer',
-        },
-    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -105,3 +96,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'chat_room'
 LOGOUT_REDIRECT_URL = 'login'
+
+# CSRF settings for Render deployment
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.onrender.com',
+    'http://*.onrender.com',
+]
+
+# Cookie settings
+CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = False
