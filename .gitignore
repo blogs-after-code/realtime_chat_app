@@ -1,0 +1,43 @@
+
+
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Database
+*.sqlite3
+db.sqlite3
+*.db
+
+# Environment
+.env
+.env.local
+
+# Static files
+staticfiles/
+static_collected/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Django
+*.log
+migrations/*.py
+!migrations/__init__.py
+
+# Operating System
+.DS_Store
+Thumbs.db

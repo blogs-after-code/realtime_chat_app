@@ -1,0 +1,269 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    height: 100vh;
+    overflow: hidden;
+}
+
+.chat-container {
+    display: flex;
+    height: 100vh;
+    background: white;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+}
+
+/* Sidebar Styles */
+.sidebar {
+    width: 300px;
+    background: #2c3e50;
+    color: white;
+    display: flex;
+    flex-direction: column;
+}
+
+.user-info {
+    padding: 20px;
+    background: #34495e;
+    border-bottom: 1px solid #3d566e;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-info h3 {
+    font-size: 16px;
+}
+
+.logout-btn {
+    background: #e74c3c;
+    color: white;
+    padding: 8px 15px;
+    text-decoration: none;
+    border-radius: 5px;
+    font-size: 14px;
+    transition: background 0.3s;
+}
+
+.logout-btn:hover {
+    background: #c0392b;
+}
+
+.users-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.users-list h4 {
+    padding: 10px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    color: #bdc3c7;
+}
+
+.online-count {
+    background: #2ecc71;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.user-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    margin: 5px 0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.user-item:hover {
+    background: #34495e;
+}
+
+.user-item.selected {
+    background: #3498db;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #3498db;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    margin-right: 12px;
+}
+
+.user-details {
+    flex: 1;
+}
+
+.username {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 3px;
+}
+
+.status {
+    font-size: 11px;
+}
+
+.status.online {
+    color: #2ecc71;
+}
+
+.status.offline {
+    color: #95a5a6;
+}
+
+/* Chat Area Styles */
+.chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #ecf0f1;
+}
+
+.chat-header {
+    background: white;
+    padding: 20px;
+    border-bottom: 1px solid #ddd;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.chat-header h3 {
+    color: #2c3e50;
+}
+
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.message {
+    margin-bottom: 15px;
+    display: flex;
+}
+
+.message.mine {
+    justify-content: flex-end;
+}
+
+.message-content {
+    max-width: 60%;
+    padding: 10px 15px;
+    border-radius: 10px;
+    position: relative;
+}
+
+.message.mine .message-content {
+    background: #3498db;
+    color: white;
+}
+
+.message.theirs .message-content {
+    background: white;
+    color: #2c3e50;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.message-text {
+    word-wrap: break-word;
+}
+
+.message-info {
+    font-size: 11px;
+    margin-top: 5px;
+    opacity: 0.8;
+}
+
+.message.mine .message-info {
+    text-align: right;
+}
+
+.message.theirs .message-info {
+    text-align: left;
+}
+
+.sender {
+    margin-right: 8px;
+}
+
+.message-input-area {
+    display: flex;
+    padding: 20px;
+    background: white;
+    border-top: 1px solid #ddd;
+}
+
+#messageInput {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+#messageInput:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+#sendBtn {
+    padding: 12px 30px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+#sendBtn:hover {
+    background: #2980b9;
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 250px;
+    }
+    
+    .message-content {
+        max-width: 80%;
+    }
+}

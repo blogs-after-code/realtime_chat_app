@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="sidebar">
+            <div class="user-info">
+                <h3>Welcome, {{ current_user.username }}</h3>
+                <a href="{% url 'logout' %}" class="logout-btn">Logout</a>
+            </div>
+            <div class="users-list">
+                <h4>Online Users <span class="online-count" id="onlineCount">0</span></h4>
+                <div id="users">
+                    {% for user in users %}
+                        <div class="user-item" data-user-id="{{ user.id }}" data-username="{{ user.username }}">
+                            <div class="user-avatar">{{ user.username|first|upper }}</div>
+                            <div class="user-details">
+                                <span class="username">{{ user.username }}</span>
+                                <span class="status offline">Offline</span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-area">
+            <div class="chat-header" id="chatHeader">
+                <h3>Select a user to start chatting</h3>
+            </div>
+            <div class="messages-container" id="messages">
+                <!-- Messages will appear here -->
+            </div>
+            <div class="message-input-area" style="display: none;">
+                <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+                <button id="sendBtn">Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const currentUserId = {{ current_user.id }};
+        let selectedUserId = null;
+        let ws = null;
+        
+        // Connect WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8000/ws/chat/');
+            
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+            };
+            
+            ws.onmessage = function(e) {
+                const data = JSON.parse(e.data);
+                
+                if (data.type === 'message') {
+                    if (data.sender_id === selectedUserId) {
+                        addMessage(data.sender, data.content, data.timestamp, false);
+                    } else {
+                        // Show notification for other users
+                        showNotification(data.sender);
+                    }
+                } else if (data.type === 'status') {
+                    updateUserStatus(data.user_id, data.is_online);
+                }
+            };
+            
+            ws.onclose = function() {
+                console.log('WebSocket disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 1000);
+            };
+        }
+        
+        function addMessage(sender, content, timestamp, isMine) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
+            
+            const time = new Date(timestamp).toLocaleTimeString();
+            
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="message-text">${escapeHtml(content)}</div>
+                    <div class="message-info">
+                        <span class="sender">${escapeHtml(sender)}</span>
+                        <span class="time">${time}</span>
+                    </div>
+                </div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function loadMessages(userId) {
+            fetch(`/get_messages/${userId}/`)
+                .then(response => response.json())
+                .then(data => {
+                    const messagesDiv = document.getElementById('messages');
+                    messagesDiv.innerHTML = '';
+                    
+                    data.messages.forEach(msg => {
+                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
+                    });
+                });
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const content = input.value.trim();
+            
+            if (content && selectedUserId && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'message',
+                    content: content,
+                    receiver_id: selectedUserId
+                }));
+                
+                input.value = '';
+            }
+        }
+        
+        function updateUserStatus(userId, isOnline) {
+            const userItem = document.querySelector(`.user-item[data-user-id="${userId}"]`);
+            if (userItem) {
+                const statusSpan = userItem.querySelector('.status');
+                statusSpan.className = `status ${isOnline ? 'online' : 'offline'}`;
+                statusSpan.textContent = isOnline ? 'Online' : 'Offline';
+            }
+            updateOnlineCount();
+        }
+        
+        function updateOnlineCount() {
+            const onlineStatuses = document.querySelectorAll('.status.online');
+            const count = onlineStatuses.length;
+            document.getElementById('onlineCount').textContent = count;
+        }
+        
+        function showNotification(sender) {
+            // Simple notification for new messages from non-selected users
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = `New message from ${sender}`;
+            notification.style.position = 'fixed';
+            notification.style.top = '20px';
+            notification.style.right = '20px';
+            notification.style.backgroundColor = '#4CAF50';
+            notification.style.color = 'white';
+            notification.style.padding = '10px';
+            notification.style.borderRadius = '5px';
+            notification.style.zIndex = '1000';
+            document.body.appendChild(notification);
+            
+            setTimeout(() => notification.remove(), 3000);
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Event listeners
+        document.querySelectorAll('.user-item').forEach(item => {
+            item.addEventListener('click', function() {
+                selectedUserId = this.dataset.userId;
+                const username = this.dataset.username;
+                
+                document.getElementById('chatHeader').innerHTML = `<h3>Chatting with ${username}</h3>`;
+                document.querySelector('.message-input-area').style.display = 'flex';
+                
+                loadMessages(selectedUserId);
+                
+                // Highlight selected user
+                document.querySelectorAll('.user-item').forEach(u => u.classList.remove('selected'));
+                this.classList.add('selected');
+            });
+        });
+        
+        document.getElementById('sendBtn').addEventListener('click', sendMessage);
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendMessage();
+        });
+        
+        // Initialize
+        connectWebSocket();
+        updateOnlineCount();
+        
+        // Periodically fetch online status
+        setInterval(() => {
+            fetch('/get_online_users/')
+                .then(response => response.json())
+                .then(data => {
+                    document.querySelectorAll('.user-item').forEach(item => {
+                        const userId = parseInt(item.dataset.userId);
+                        const isOnline = data.online_users.includes(userId);
+                        updateUserStatus(userId, isOnline);
+                    });
+                });
+        }, 5000);
+    </script>
+</body>
+</html>
