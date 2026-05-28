@@ -44,169 +44,173 @@
     </div>
     
     <script>
-        const currentUserId = {{ current_user.id }};
-        let selectedUserId = null;
-        let ws = null;
-        
-        // Connect WebSocket
-        function connectWebSocket() {
-          // Use wss:// for production (secure WebSocket)
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const wsUrl = `${protocol}//${window.location.host}/ws/chat/`;
-ws = new WebSocket(wsUrl);
-            
-            ws.onopen = function() {
-                console.log('WebSocket connected');
-            };
-            
-            ws.onmessage = function(e) {
-                const data = JSON.parse(e.data);
-                
-                if (data.type === 'message') {
-                    if (data.sender_id === selectedUserId) {
-                        addMessage(data.sender, data.content, data.timestamp, false);
-                    } else {
-                        // Show notification for other users
-                        showNotification(data.sender);
-                    }
-                } else if (data.type === 'status') {
-                    updateUserStatus(data.user_id, data.is_online);
-                }
-            };
-            
-            ws.onclose = function() {
-                console.log('WebSocket disconnected, reconnecting...');
-                setTimeout(connectWebSocket, 1000);
-            };
-        }
-        
-        function addMessage(sender, content, timestamp, isMine) {
-            const messagesDiv = document.getElementById('messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
-            
-            const time = new Date(timestamp).toLocaleTimeString();
-            
-            messageDiv.innerHTML = `
-                <div class="message-content">
-                    <div class="message-text">${escapeHtml(content)}</div>
-                    <div class="message-info">
-                        <span class="sender">${escapeHtml(sender)}</span>
-                        <span class="time">${time}</span>
-                    </div>
-                </div>
-            `;
-            
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-        
-        function loadMessages(userId) {
-            fetch(`/get_messages/${userId}/`)
-                .then(response => response.json())
-                .then(data => {
-                    const messagesDiv = document.getElementById('messages');
-                    messagesDiv.innerHTML = '';
-                    
-                    data.messages.forEach(msg => {
-                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
-                    });
+    const currentUserId = {{ current_user.id }};
+    let selectedUserId = null;
+    let lastMessageId = 0;
+    let pollingInterval = null;
+    
+    // Update online status every 30 seconds
+    function updateOnlineStatus() {
+        fetch('/api/update_status/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+    }
+    
+    // Check online users every 5 seconds
+    function checkOnlineUsers() {
+        fetch('/api/check_status/')
+            .then(response => response.json())
+            .then(data => {
+                document.querySelectorAll('.user-item').forEach(item => {
+                    const userId = parseInt(item.dataset.userId);
+                    const isOnline = data.online_users.includes(userId);
+                    const statusSpan = item.querySelector('.status');
+                    statusSpan.className = `status ${isOnline ? 'online' : 'offline'}`;
+                    statusSpan.textContent = isOnline ? 'Online' : 'Offline';
                 });
-        }
-        
-        function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const content = input.value.trim();
-            
-            if (content && selectedUserId && ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'message',
-                    content: content,
-                    receiver_id: selectedUserId
-                }));
-                
-                input.value = '';
-            }
-        }
-        
-        function updateUserStatus(userId, isOnline) {
-            const userItem = document.querySelector(`.user-item[data-user-id="${userId}"]`);
-            if (userItem) {
-                const statusSpan = userItem.querySelector('.status');
-                statusSpan.className = `status ${isOnline ? 'online' : 'offline'}`;
-                statusSpan.textContent = isOnline ? 'Online' : 'Offline';
-            }
-            updateOnlineCount();
-        }
-        
-        function updateOnlineCount() {
-            const onlineStatuses = document.querySelectorAll('.status.online');
-            const count = onlineStatuses.length;
-            document.getElementById('onlineCount').textContent = count;
-        }
-        
-        function showNotification(sender) {
-            // Simple notification for new messages from non-selected users
-            const notification = document.createElement('div');
-            notification.className = 'notification';
-            notification.textContent = `New message from ${sender}`;
-            notification.style.position = 'fixed';
-            notification.style.top = '20px';
-            notification.style.right = '20px';
-            notification.style.backgroundColor = '#4CAF50';
-            notification.style.color = 'white';
-            notification.style.padding = '10px';
-            notification.style.borderRadius = '5px';
-            notification.style.zIndex = '1000';
-            document.body.appendChild(notification);
-            
-            setTimeout(() => notification.remove(), 3000);
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        // Event listeners
-        document.querySelectorAll('.user-item').forEach(item => {
-            item.addEventListener('click', function() {
-                selectedUserId = this.dataset.userId;
-                const username = this.dataset.username;
-                
-                document.getElementById('chatHeader').innerHTML = `<h3>Chatting with ${username}</h3>`;
-                document.querySelector('.message-input-area').style.display = 'flex';
-                
-                loadMessages(selectedUserId);
-                
-                // Highlight selected user
-                document.querySelectorAll('.user-item').forEach(u => u.classList.remove('selected'));
-                this.classList.add('selected');
+                document.getElementById('onlineCount').textContent = data.online_users.length;
             });
-        });
-        
-        document.getElementById('sendBtn').addEventListener('click', sendMessage);
-        document.getElementById('messageInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') sendMessage();
-        });
-        
-        // Initialize
-        connectWebSocket();
-        updateOnlineCount();
-        
-        // Periodically fetch online status
-        setInterval(() => {
-            fetch('/get_online_users/')
+    }
+    
+    // Check for new messages every 2 seconds
+    function checkNewMessages() {
+        if (selectedUserId) {
+            fetch(`/api/get_new_messages/?user_id=${selectedUserId}&last_id=${lastMessageId}`)
                 .then(response => response.json())
                 .then(data => {
-                    document.querySelectorAll('.user-item').forEach(item => {
-                        const userId = parseInt(item.dataset.userId);
-                        const isOnline = data.online_users.includes(userId);
-                        updateUserStatus(userId, isOnline);
-                    });
+                    if (data.messages.length > 0) {
+                        data.messages.forEach(msg => {
+                            addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
+                            if (msg.id > lastMessageId) {
+                                lastMessageId = msg.id;
+                            }
+                        });
+                    }
                 });
-        }, 5000);
-    </script>
+        }
+    }
+    
+    // Send message using AJAX
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+        
+        if (content && selectedUserId) {
+            fetch('/api/send_message/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    receiver_id: selectedUserId,
+                    content: content
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    input.value = '';
+                    // Reload messages to show the sent message
+                    loadMessages(selectedUserId);
+                }
+            });
+        }
+    }
+    
+    function addMessage(sender, content, timestamp, isMine) {
+        const messagesDiv = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
+        
+        const time = new Date(timestamp).toLocaleTimeString();
+        
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <div class="message-text">${escapeHtml(content)}</div>
+                <div class="message-info">
+                    <span class="sender">${escapeHtml(sender)}</span>
+                    <span class="time">${time}</span>
+                </div>
+            </div>
+        `;
+        
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    
+    function loadMessages(userId) {
+        fetch(`/get_messages/${userId}/`)
+            .then(response => response.json())
+            .then(data => {
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML = '';
+                
+                // Update last message ID
+                if (data.messages.length > 0) {
+                    lastMessageId = data.messages[data.messages.length - 1].id;
+                }
+                
+                data.messages.forEach(msg => {
+                    addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
+                });
+            });
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // Event listeners
+    document.querySelectorAll('.user-item').forEach(item => {
+        item.addEventListener('click', function() {
+            selectedUserId = this.dataset.userId;
+            const username = this.dataset.username;
+            
+            document.getElementById('chatHeader').innerHTML = `<h3>Chatting with ${username}</h3>`;
+            document.querySelector('.message-input-area').style.display = 'flex';
+            
+            lastMessageId = 0;
+            loadMessages(selectedUserId);
+            
+            document.querySelectorAll('.user-item').forEach(u => u.classList.remove('selected'));
+            this.classList.add('selected');
+        });
+    });
+    
+    document.getElementById('sendBtn').addEventListener('click', sendMessage);
+    document.getElementById('messageInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') sendMessage();
+    });
+    
+    // Start polling
+    updateOnlineStatus();
+    setInterval(updateOnlineStatus, 30000); // Every 30 seconds
+    setInterval(checkOnlineUsers, 5000); // Every 5 seconds
+    setInterval(checkNewMessages, 2000); // Every 2 seconds
+    
+    // Initial load
+    checkOnlineUsers();
+</script>
 </body>
 </html>

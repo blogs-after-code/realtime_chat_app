@@ -8,4 +8,8 @@ urlpatterns = [
     path('', views.chat_room, name='chat_room'),
     path('get_messages/<int:user_id>/', views.get_messages, name='get_messages'),
     path('get_online_users/', views.get_online_users, name='get_online_users'),
+      path('api/send_message/', views.send_message_ajax, name='send_message_ajax'),
+    path('api/get_new_messages/', views.get_new_messages, name='get_new_messages'),
+    path('api/check_status/', views.check_user_status, name='check_user_status'),
+    path('api/update_status/', views.update_online_status, name='update_online_status'),
 ]
