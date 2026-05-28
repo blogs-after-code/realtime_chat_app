@@ -43,23 +43,40 @@
         </div>
     </div>
     
-    <script>
+<script>
     const currentUserId = {{ current_user.id }};
     let selectedUserId = null;
     let lastMessageId = 0;
     let pollingInterval = null;
+    let messageCheckInterval = null;
     
-    // Update online status every 30 seconds
+    // Get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // Update online status (keep user alive)
     function updateOnlineStatus() {
         fetch('/api/update_status/', {
             method: 'POST',
             headers: {
                 'X-CSRFToken': getCookie('csrftoken')
             }
-        });
+        }).catch(error => console.log('Status update error:', error));
     }
     
-    // Check online users every 5 seconds
+    // Check online users
     function checkOnlineUsers() {
         fetch('/api/check_status/')
             .then(response => response.json())
@@ -68,32 +85,46 @@
                     const userId = parseInt(item.dataset.userId);
                     const isOnline = data.online_users.includes(userId);
                     const statusSpan = item.querySelector('.status');
-                    statusSpan.className = `status ${isOnline ? 'online' : 'offline'}`;
-                    statusSpan.textContent = isOnline ? 'Online' : 'Offline';
+                    if (statusSpan) {
+                        statusSpan.className = `status ${isOnline ? 'online' : 'offline'}`;
+                        statusSpan.textContent = isOnline ? 'Online' : 'Offline';
+                    }
                 });
-                document.getElementById('onlineCount').textContent = data.online_users.length;
-            });
+                const onlineCount = document.getElementById('onlineCount');
+                if (onlineCount) {
+                    onlineCount.textContent = data.online_users.length;
+                }
+            })
+            .catch(error => console.log('Online users check error:', error));
     }
     
-    // Check for new messages every 2 seconds
+    // Check for new messages
     function checkNewMessages() {
         if (selectedUserId) {
             fetch(`/api/get_new_messages/?user_id=${selectedUserId}&last_id=${lastMessageId}`)
                 .then(response => response.json())
                 .then(data => {
-                    if (data.messages.length > 0) {
+                    if (data.messages && data.messages.length > 0) {
+                        // Sort messages by ID to ensure correct order
+                        data.messages.sort((a, b) => a.id - b.id);
+                        
                         data.messages.forEach(msg => {
                             addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
                             if (msg.id > lastMessageId) {
                                 lastMessageId = msg.id;
                             }
                         });
+                        
+                        // Scroll to bottom
+                        const messagesDiv = document.getElementById('messages');
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
                     }
-                });
+                })
+                .catch(error => console.log('Message check error:', error));
         }
     }
     
-    // Send message using AJAX
+    // Send message
     function sendMessage() {
         const input = document.getElementById('messageInput');
         const content = input.value.trim();
@@ -114,13 +145,17 @@
             .then(data => {
                 if (data.status === 'success') {
                     input.value = '';
-                    // Reload messages to show the sent message
-                    loadMessages(selectedUserId);
+                    // Force immediate message check
+                    setTimeout(() => {
+                        loadMessages(selectedUserId);
+                    }, 100);
                 }
-            });
+            })
+            .catch(error => console.log('Send message error:', error));
         }
     }
     
+    // Add message to chat window
     function addMessage(sender, content, timestamp, isMine) {
         const messagesDiv = document.getElementById('messages');
         const messageDiv = document.createElement('div');
@@ -142,6 +177,7 @@
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
     
+    // Load all messages for a user
     function loadMessages(userId) {
         fetch(`/get_messages/${userId}/`)
             .then(response => response.json())
@@ -149,68 +185,100 @@
                 const messagesDiv = document.getElementById('messages');
                 messagesDiv.innerHTML = '';
                 
-                // Update last message ID
-                if (data.messages.length > 0) {
-                    lastMessageId = data.messages[data.messages.length - 1].id;
+                // Reset last message ID
+                lastMessageId = 0;
+                
+                if (data.messages && data.messages.length > 0) {
+                    data.messages.forEach(msg => {
+                        addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
+                        // Track the highest message ID
+                        if (msg.id && msg.id > lastMessageId) {
+                            lastMessageId = msg.id;
+                        }
+                    });
                 }
                 
-                data.messages.forEach(msg => {
-                    addMessage(msg.sender, msg.content, msg.timestamp, msg.is_mine);
-                });
-            });
+                // Scroll to bottom
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            })
+            .catch(error => console.log('Load messages error:', error));
     }
     
+    // Escape HTML to prevent XSS
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
     
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
+    // Select a user to chat with
+    function selectUser(userItem) {
+        selectedUserId = userItem.dataset.userId;
+        const username = userItem.dataset.username;
+        
+        const chatHeader = document.getElementById('chatHeader');
+        if (chatHeader) {
+            chatHeader.innerHTML = `<h3>Chatting with ${username}</h3>`;
         }
-        return cookieValue;
+        
+        const messageInputArea = document.querySelector('.message-input-area');
+        if (messageInputArea) {
+            messageInputArea.style.display = 'flex';
+        }
+        
+        // Reset last message ID and load messages
+        lastMessageId = 0;
+        loadMessages(selectedUserId);
+        
+        // Remove selected class from all users and add to current
+        document.querySelectorAll('.user-item').forEach(u => u.classList.remove('selected'));
+        userItem.classList.add('selected');
     }
     
-    // Event listeners
-    document.querySelectorAll('.user-item').forEach(item => {
-        item.addEventListener('click', function() {
-            selectedUserId = this.dataset.userId;
-            const username = this.dataset.username;
-            
-            document.getElementById('chatHeader').innerHTML = `<h3>Chatting with ${username}</h3>`;
-            document.querySelector('.message-input-area').style.display = 'flex';
-            
-            lastMessageId = 0;
-            loadMessages(selectedUserId);
-            
-            document.querySelectorAll('.user-item').forEach(u => u.classList.remove('selected'));
-            this.classList.add('selected');
+    // Event listeners when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        // User selection
+        document.querySelectorAll('.user-item').forEach(item => {
+            item.addEventListener('click', function() {
+                selectUser(this);
+            });
         });
+        
+        // Send button
+        const sendBtn = document.getElementById('sendBtn');
+        if (sendBtn) {
+            sendBtn.addEventListener('click', sendMessage);
+        }
+        
+        // Enter key
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        }
+        
+        // Start polling intervals
+        updateOnlineStatus();
+        
+        // Update online status every 30 seconds
+        setInterval(updateOnlineStatus, 30000);
+        
+        // Check online users every 5 seconds
+        setInterval(checkOnlineUsers, 5000);
+        
+        // Check for new messages every 2 seconds (only if a user is selected)
+        setInterval(() => {
+            if (selectedUserId) {
+                checkNewMessages();
+            }
+        }, 2000);
+        
+        // Initial load of online users
+        checkOnlineUsers();
     });
-    
-    document.getElementById('sendBtn').addEventListener('click', sendMessage);
-    document.getElementById('messageInput').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') sendMessage();
-    });
-    
-    // Start polling
-    updateOnlineStatus();
-    setInterval(updateOnlineStatus, 30000); // Every 30 seconds
-    setInterval(checkOnlineUsers, 5000); // Every 5 seconds
-    setInterval(checkNewMessages, 2000); // Every 2 seconds
-    
-    // Initial load
-    checkOnlineUsers();
 </script>
 </body>
 </html>
