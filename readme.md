@@ -1,6 +1,6 @@
 # Real-Time Chat Application
 
-A real-time chat application with online status indicators built with Django, WebSockets, and PostgreSQL.
+A real-time chat application with online status indicators built with Django, WebSockets, and SQLite.
 
 ## Features
 
@@ -13,7 +13,7 @@ A real-time chat application with online status indicators built with Django, We
 ## Tech Stack
 
 - Backend: Django, Django Channels
-- Database: PostgreSQL (production) / SQLite (development)
+- Database: SQLite (development)
 - Real-time: WebSockets, Redis
 - Frontend: HTML, CSS, JavaScript
 
@@ -29,7 +29,7 @@ A real-time chat application with online status indicators built with Django, We
 
 ## Deployment
 
-This app is configured for deployment on Render.com with PostgreSQL and Redis support.
+This app is configured for deployment on Render.com with SQLite and Redis support.
 
 ## Live Demo
 
